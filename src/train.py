@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.utils import resample
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.compose import make_column_transformer
 from sklearn.preprocessing import OneHotEncoder,  StandardScaler
@@ -20,6 +21,10 @@ from sklearn.metrics import (
 )
 
 ### Import MLflow
+import mlflow
+import mlflow.sklearn
+from mlflow.models.signature import infer_signature
+import os
 
 def rebalance(data):
     """
@@ -111,65 +116,145 @@ def preprocess(df):
     return col_transf, X_train, X_test, y_train, y_test
 
 
-def train(X_train, y_train):
+def train_and_evaluate_model(model_name, model, X_train, X_test, y_train, y_test):
     """
-    Train a logistic regression model.
+    Train a model and evaluate its performance.
 
     Args:
-        X_train (pd.DataFrame): DataFrame with features
-        y_train (pd.Series): Series with target
+        model_name (str): Name of the model
+        model: Model instance to train
+        X_train (pd.DataFrame): Training features
+        X_test (pd.DataFrame): Test features
+        y_train (pd.Series): Training target
+        y_test (pd.Series): Test target
 
     Returns:
-        LogisticRegression: trained logistic regression model
+        dict: Dictionary containing evaluation metrics
     """
-    log_reg = LogisticRegression(max_iter=1000)
-    log_reg.fit(X_train, y_train)
-
-    ### Log the model with the input and output schema
-    # Infer signature (input and output schema)
-
-    # Log model
-
-    ### Log the data
-
-    return log_reg
+    # Start a new run for this model
+    with mlflow.start_run(nested=True, run_name=model_name) as run:
+        print(f"\nTraining {model_name}...")
+        
+        # Log model parameters
+        params = model.get_params()
+        mlflow.log_params(params)
+        
+        # Train model
+        model.fit(X_train, y_train)
+        
+        # Make predictions
+        y_pred = model.predict(X_test)
+        
+        # Calculate metrics
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred)
+        recall = recall_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+        
+        # Log metrics
+        mlflow.log_metrics({
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1_score": f1
+        })
+        
+        # Create and log confusion matrix
+        conf_mat = confusion_matrix(y_test, y_pred, labels=model.classes_)
+        conf_mat_disp = ConfusionMatrixDisplay(
+            confusion_matrix=conf_mat, display_labels=model.classes_
+        )
+        fig, ax = plt.subplots(figsize=(8, 6))
+        conf_mat_disp.plot(ax=ax)
+        plt.title(f"Confusion Matrix - {model_name}")
+        
+        # Save confusion matrix plot locally
+        cm_path = f"confusion_matrix_{model_name}.png"
+        plt.savefig(cm_path)
+        
+        # Log the plot as an artifact
+        mlflow.log_artifact(cm_path)
+        
+        # Log model with signature
+        signature = infer_signature(X_train, y_pred)
+        mlflow.sklearn.log_model(model, f"{model_name}_model", signature=signature)
+        
+        # Log tags
+        mlflow.set_tags({
+            "model_type": model_name,
+            "data_version": "v1.0"
+        })
+        
+        # Print metrics
+        print(f"{model_name} Metrics:")
+        print(f"  Accuracy: {accuracy:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall: {recall:.4f}")
+        print(f"  F1 Score: {f1:.4f}")
+        
+        # Delete the saved image after logging
+        if os.path.exists(cm_path):
+            os.remove(cm_path)
+            
+        return {
+            "model": model,
+            "metrics": {
+                "accuracy": accuracy,
+                "precision": precision,
+                "recall": recall,
+                "f1_score": f1
+            },
+            "run_id": run.info.run_id
+        }
 
 
 def main():
-    ### Set the tracking URI for MLflow
+    # Set the tracking URI for MLflow
+    mlflow.set_tracking_uri("http://localhost:5000")  # Change if using a different URI
 
-    ### Set the experiment name
+    # Set the experiment name
+    experiment_name = "bank_churn_prediction"
+    mlflow.set_experiment(experiment_name)
 
-
-    ### Start a new run and leave all the main function code as part of the experiment
-
-    df = pd.read_csv("data/Churn_Modelling.csv")
-    col_transf, X_train, X_test, y_train, y_test = preprocess(df)
-
-    ### Log the max_iter parameter
-
-    model = train(X_train, y_train)
-
-    
-    y_pred = model.predict(X_test)
-
-    ### Log metrics after calculating them
-
-
-    ### Log tag
-
-
-    
-    conf_mat = confusion_matrix(y_test, y_pred, labels=model.classes_)
-    conf_mat_disp = ConfusionMatrixDisplay(
-        confusion_matrix=conf_mat, display_labels=model.classes_
-    )
-    conf_mat_disp.plot()
-    
-    # Log the image as an artifact in MLflow
-    
-    plt.show()
+    # Start a new run for the overall experiment
+    with mlflow.start_run(run_name="multi_model_comparison") as parent_run:
+        print("Starting bank customer churn prediction experiment...")
+        
+        # Log experiment-level tags
+        mlflow.set_tags({
+            "experiment_type": "model_comparison",
+            "data_source": "bank_customer_churn",
+            "purpose": "churn_prediction"
+        })
+        
+        # Load and preprocess data
+        df = pd.read_csv("MLOps-Course-Labs/dataset/Churn_Modelling.csv")
+        col_transf, X_train, X_test, y_train, y_test = preprocess(df)
+        
+        # Define models to train and evaluate
+        models = {
+            "LogisticRegression": LogisticRegression(max_iter=1000),
+            "RandomForest": RandomForestClassifier(n_estimators=100, random_state=42),
+            "GradientBoosting": GradientBoostingClassifier(n_estimators=100, random_state=42)
+        }
+        
+        # Train and evaluate each model
+        results = {}
+        for model_name, model in models.items():
+            results[model_name] = train_and_evaluate_model(
+                model_name, model, X_train, X_test, y_train, y_test
+            )
+        
+        # Log data samples
+        mlflow.log_artifact("MLOps-Course-Labs/dataset/Churn_Modelling.csv", "data_samples")
+        
+        # Compare and print the best model
+        best_model = max(results.items(), key=lambda x: x[1]["metrics"]["f1_score"])
+        print(f"\nBest model based on F1 score: {best_model[0]}")
+        print(f"F1 score: {best_model[1]['metrics']['f1_score']:.4f}")
+        print(f"Run ID: {best_model[1]['run_id']}")
 
 
 if __name__ == "__main__":
     main()
+    
