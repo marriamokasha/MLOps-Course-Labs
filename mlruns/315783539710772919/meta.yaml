@@ -1,0 +1,6 @@
+artifact_location: mlflow-artifacts:/315783539710772919
+creation_time: 1747853311420
+experiment_id: '315783539710772919'
+last_update_time: 1747853311420
+lifecycle_stage: active
+name: bank_churn_prediction

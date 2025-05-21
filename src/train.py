@@ -24,6 +24,7 @@ from sklearn.metrics import (
 import mlflow
 import mlflow.sklearn
 from mlflow.models.signature import infer_signature
+import joblib
 import os
 
 def rebalance(data):
@@ -206,7 +207,76 @@ def train_and_evaluate_model(model_name, model, X_train, X_test, y_train, y_test
             },
             "run_id": run.info.run_id
         }
+def save_preprocessor(preprocessor, file_path="models/preprocessor.pkl"):
+    """
+    Save the preprocessing transformer to disk.
+    
+    Args:
+        preprocessor: Fitted column transformer
+        file_path: Path where to save the transformer
+    """
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+    # Save the preprocessor using joblib
+    joblib.dump(preprocessor, file_path)
+    print(f"Preprocessor saved to {file_path}")
+    
+    return file_path
 
+
+def save_best_model(model, model_name, file_path="models/best_model.pkl"):
+    """
+    Save the best model to disk.
+    
+    Args:
+        model: Trained model
+        model_name: Name of the model
+        file_path: Path where to save the model
+        
+    Returns:
+        str: Path to the saved model
+    """
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+    # Save model name and object as a dictionary
+    model_info = {
+        "model_name": model_name,
+        "model_object": model
+    }
+    
+    # Save using joblib
+    joblib.dump(model_info, file_path)
+    print(f"Best model ({model_name}) saved to {file_path}")
+    
+    return file_path
+
+
+def load_preprocessor(file_path="models/preprocessor.pkl"):
+    """
+    Load the preprocessing transformer from disk.
+    
+    Args:
+        file_path: Path to the saved preprocessor
+        
+    Returns:
+        The loaded preprocessor
+    """
+    return joblib.load(file_path)
+
+
+def load_best_model(file_path="models/best_model.pkl"):
+    """
+    Load the best model from disk.
+    
+    Args:
+        file_path: Path to the saved model
+        
+    Returns:
+        dict: Dictionary containing model name and model object
+    """
+    return joblib.load(file_path)
 
 def main():
     # Set the tracking URI for MLflow
@@ -219,7 +289,7 @@ def main():
     # Start a new run for the overall experiment
     with mlflow.start_run(run_name="multi_model_comparison") as parent_run:
         print("Starting bank customer churn prediction experiment...")
-        
+
         # Log experiment-level tags
         mlflow.set_tags({
             "experiment_type": "model_comparison",
@@ -228,8 +298,12 @@ def main():
         })
         
         # Load and preprocess data
-        df = pd.read_csv("MLOps-Course-Labs/dataset/Churn_Modelling.csv")
+        df = pd.read_csv("dataset/Churn_Modelling.csv")
         col_transf, X_train, X_test, y_train, y_test = preprocess(df)
+        
+        # Save the preprocessor to disk and log its path as an artifact in MLflow
+        preprocessor_path = save_preprocessor(col_transf)
+        mlflow.log_artifact(preprocessor_path, "preprocessor")
         
         # Define models to train and evaluate
         models = {
@@ -246,13 +320,40 @@ def main():
             )
         
         # Log data samples
-        mlflow.log_artifact("MLOps-Course-Labs/dataset/Churn_Modelling.csv", "data_samples")
+        mlflow.log_artifact("dataset/Churn_Modelling.csv", "data_samples")
         
-        # Compare and print the best model
-        best_model = max(results.items(), key=lambda x: x[1]["metrics"]["f1_score"])
-        print(f"\nBest model based on F1 score: {best_model[0]}")
-        print(f"F1 score: {best_model[1]['metrics']['f1_score']:.4f}")
-        print(f"Run ID: {best_model[1]['run_id']}")
+        # Compare and find the best model
+        best_model_name = max(results.items(), key=lambda x: x[1]["metrics"]["f1_score"])[0]
+        best_model_obj = results[best_model_name]["model"]
+        best_model_metrics = results[best_model_name]["metrics"]
+        best_run_id = results[best_model_name]["run_id"]
+        
+        # Save the best model to disk and log its path as an artifact in MLflow
+        best_model_path = save_best_model(best_model_obj, best_model_name)
+        mlflow.log_artifact(best_model_path, "best_model")
+        
+        # Log a simple text file with the best model information
+        best_model_info = (
+            f"Best Model: {best_model_name}\n"
+            f"F1 Score: {best_model_metrics['f1_score']:.4f}\n"
+            f"Accuracy: {best_model_metrics['accuracy']:.4f}\n"
+            f"Precision: {best_model_metrics['precision']:.4f}\n"
+            f"Recall: {best_model_metrics['recall']:.4f}\n"
+            f"Run ID: {best_run_id}\n"
+        )
+        
+        with open("best_model_info.txt", "w") as f:
+            f.write(best_model_info)
+        
+        mlflow.log_artifact("best_model_info.txt")
+        
+        # Print best model information
+        print(f"\nBest model based on F1 score: {best_model_name}")
+        print(f"F1 score: {best_model_metrics['f1_score']:.4f}")
+        print(f"Run ID: {best_run_id}")
+        print(f"Preprocessor saved to: {preprocessor_path}")
+        print(f"Best model saved to: {best_model_path}")
+
 
 
 if __name__ == "__main__":

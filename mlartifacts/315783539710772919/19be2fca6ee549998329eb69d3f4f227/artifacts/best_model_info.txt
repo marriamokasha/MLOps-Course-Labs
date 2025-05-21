@@ -1,0 +1,6 @@
+Best Model: GradientBoosting
+F1 Score: 0.7651
+Accuracy: 0.7735
+Precision: 0.7803
+Recall: 0.7504
+Run ID: 5c5d3bc512d44f138cf645149b7fec49
