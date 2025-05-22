@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import joblib
 import numpy as np
 import logging
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 # Initialize app
 app = FastAPI(title="Churn Prediction API")
-
+instrumentator = Instrumentator()
+instrumentator.instrument(app).expose(app)
 # Load model and preprocessor
 try:
     # Load preprocessor (this is correct)

@@ -5,8 +5,10 @@ pandas==2.2.3
 psutil==5.9.0
 scikit-learn==1.6.1
 scipy==1.15.2
+
 fastapi
 uvicorn
 pydantic
 joblib
 httpx
+prometheus-fastapi-instrumentator
