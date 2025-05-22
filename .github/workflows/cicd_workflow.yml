@@ -1,3 +1,4 @@
+
 name: Build, Test, and Deploy to AWS EC2
 
 on:
@@ -5,7 +6,9 @@ on:
     branches:
       - feature/api-docker
 
+
 jobs:
+
   build_test_deploy:
     runs-on: ubuntu-latest
     steps:
@@ -14,7 +17,7 @@ jobs:
       - name: Set up Python 
         uses: actions/setup-python@v3
         with:
-          python-version: '3.10' 
+          python-version: '3.12' 
 
       - name: Install Dependencies
         run: |
@@ -46,31 +49,14 @@ jobs:
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/churn-prediction:latest    
 
       - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3  # Use specific version
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }} 
           username: ${{ secrets.EC2_USERNAME }} 
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          timeout: 60s
-          command_timeout: 10m
+          key: ${{ secrets.EC2_SSH_KEY }}  
           script: |
-            # Install AWS CLI if not present
-            if ! command -v aws &> /dev/null; then
-              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-              sudo apt update && sudo apt install -y unzip
-              unzip awscliv2.zip
-              sudo ./aws/install
-            fi
-            
-            # Configure AWS credentials on EC2 (make sure these are set as environment variables)
-            export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-            export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            export AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }}
-            
-            # Login to ECR and deploy
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
             docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/churn-prediction:latest
-            docker stop churn-prediction || true
+            docker stop churn-prediction || true # In case the container doesn't exist yet
             docker rm churn-prediction || true
-            docker run -d -p 80:8000 --name churn-prediction ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/churn-prediction:latest
+            docker run -d -p 80:8000 --name churn-prediction ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/churn-prediction:latest 
