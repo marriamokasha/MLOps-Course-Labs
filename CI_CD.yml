@@ -4,14 +4,11 @@ name: Build, Test, and Deploy to AWS EC2
 on:
   push:
     branches:
-      - cicd-github-actions
-  # pull_request:
-  #   types:
-  #     - closed
+      - feature/api-docker
+
 
 jobs:
-  # if_merged:
-  #   if: github.event.pull_request.merged == true
+
   build_test_deploy:
     runs-on: ubuntu-latest
     steps:
